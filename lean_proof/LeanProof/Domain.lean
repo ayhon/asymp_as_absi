@@ -4,6 +4,11 @@ import Mathlib.Data.Real.Basic
 import Mathlib.Data.EReal.Basic
 import Mathlib.Data.ENNReal.Basic
 
+-- Probably deprecated when https://github.com/leanprover-community/mathlib4/pull/33876
+-- is merged
+instance {α : Type} : Coe α (WithTop (WithBot α)) where
+  coe x := (Coe.coe x : WithBot α)
+
 /-!
 # Domain definitions for asymptotic analysis
 
@@ -41,17 +46,39 @@ abbrev Dc := Set Dd
 
 /-- Abstract domain: extended non-negative reals paired with reals,
     plus top and bottom elements. -/
-inductive Da
-  | bot : Da
-  | elem : ℝ≥0∞ × ℝ → Da
-  | top : Da
+abbrev Da := WithTop (WithBot (ℝ ×ₗ ℝ≥0∞))
+
+@[match_pattern] def Da.elem : ℝ ×ₗ ℝ≥0∞ → Da := Coe.coe
+
+@[cases_eliminator, elab_as_elim]
+def Da.rec {motive : Da → Prop}
+  (onBot : motive ⊥)
+  (onElem : ∀ (x : ℝ ×ₗ ℝ≥0∞), motive (↑x))
+  (onTop : motive ⊤)
+  (a : Da) : motive a
+:= match a with
+   | ⊤  => onTop
+   | ⊥  => onBot
+   | .elem x => onElem x
+
 
 /-- Signed abstract domain: extended reals paired with reals,
     plus top and bottom elements. -/
-inductive Dastar
-  | bot : Dastar
-  | elem : EReal × ℝ → Dastar
-  | top : Dastar
+abbrev Dastar := WithTop (WithBot (ℝ ×ₗ EReal))
+
+@[match_pattern] def Dastar.elem : ℝ ×ₗ EReal → Dastar := Coe.coe
+
+@[cases_eliminator, elab_as_elim]
+def Dastar.rec {motive : Dastar → Prop}
+  (onBot : motive ⊥)
+  (onElem : ∀ (x : ℝ ×ₗ EReal), motive (↑x))
+  (onTop : motive ⊤)
+  (a : Dastar) : motive a
+:= match a with
+   | ⊤  => onTop
+   | ⊥  => onBot
+   | .elem x => onElem x
+
 
 namespace Dd
 
@@ -117,6 +144,10 @@ lemma le_trans {f g h : Dd} (hfg : f ⊑d g) (hgh : g ⊑d h) : f ⊑d h := by
 end Dd
 
 namespace Dc
+-- TODO: This is probably just the default LE for (Set _)
+#synth LE (Set _)
+#check Set.instLE
+#check Set.Subset
 
 /-- Concrete ordering: subset inclusion. -/
 def le (A B : Dc) : Prop := ∀ f : Dd, A f → B f
@@ -142,73 +173,3 @@ instance : PartialOrder Dc where
   le_refl := Dc.le_refl
   le_trans := @Dc.le_trans
   le_antisymm := @Dc.le_antisymm
-namespace Da
-
-/-- Lexicographic ordering on the abstract domain, with the real component prioritized. -/
-def le (a b : Da) : Prop :=
-  match a, b with
-  | bot, _ => True
-  | _, top => True
-  | top, _ => False
-  | _, bot => False
-  | elem (c1, r1), elem (c2, r2) =>
-      r1 < r2 ∨ (r1 = r2 ∧ c1 ≤ c2)
-
-/-- Notation for abstract ordering. -/
-scoped infix:50 " ⊑a " => le
-
-/-- Every abstract element is related to itself. -/
-lemma le_refl (a : Da) : a ⊑a a := by
-  cases a
-  · trivial  -- bot case
-  · right; exact ⟨rfl, le_rfl⟩  -- elem case
-  · trivial  -- top case
-
-/-- The abstract ordering is antisymmetric. -/
-lemma le_antisymm {a b : Da} (hab : a ⊑a b) (hba : b ⊑a a) : a = b := by
-  cases a <;> cases b
-  · rfl  -- bot, bot
-  · trivial  -- bot, elem - impossible by hab = True and hba = False
-  · trivial  -- bot, top
-  · contradiction  -- elem, bot
-  · -- elem, elem
-    rename_i p1 p2
-    rcases hab with hlt | ⟨heq, hle⟩
-    · rcases hba with hlt' | ⟨heq', hle'⟩
-      · linarith  -- r1 < r2 and r2 < r1 contradiction
-      · linarith  -- r1 < r2 and r2 = r1 contradiction
-    · rcases hba with hlt' | ⟨heq', hle'⟩
-      · linarith  -- r1 = r2 and r2 < r1 contradiction
-      · -- r1 = r2 and c1 ≤ c2 and r2 = r1 and c2 ≤ c1
-        congr 1
-        exact Prod.ext (le_antisymm_iff.mpr ⟨hle, hle'⟩) heq
-  · trivial  -- elem, top
-  · trivial  -- top, bot
-  · trivial  -- top, elem
-  · rfl  -- top, top
-
-/-- The abstract ordering is transitive. -/
-lemma le_trans {a b c : Da} (hab : a ⊑a b) (hbc : b ⊑a c) : a ⊑a c := by
-  cases a <;> cases b <;> cases c <;> try trivial
-  · -- elem, elem, elem
-    rename_i p1 p2 p3
-    obtain ⟨c1, r1⟩ := p1
-    obtain ⟨c2, r2⟩ := p2
-    obtain ⟨c3, r3⟩ := p3
-    rcases hab with hlt_ab | ⟨heq_ab, hle_ab⟩ <;>
-    rcases hbc with hlt_bc | ⟨heq_bc, hle_bc⟩
-    · left; linarith  -- r1 < r2 < r3
-    · left; linarith  -- r1 < r2 = r3
-    · left; linarith  -- r1 = r2 < r3
-    · right  -- r1 = r2 = r3
-      constructor
-      · exact heq_ab.trans heq_bc
-      · exact hle_ab.trans hle_bc
-
-end Da
-
-instance : PartialOrder Da where
-  le := Da.le
-  le_refl := Da.le_refl
-  le_trans := @Da.le_trans
-  le_antisymm := @Da.le_antisymm
