@@ -22,4 +22,4 @@ jobs:
           lake-package-directory: "lean_proof"
       - uses: leanprover-community/docgen-action@v1
         with:
-          lake-package-directory: "lean_proof"
+          lake_package_directory: "lean_proof"
